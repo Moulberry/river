@@ -913,8 +913,6 @@ pub fn enterMode(self: *Self, mode: enum { move, resize }, view: *View) void {
         },
     }
 
-    // The View.applyPending() call in the other branch starts
-    // the transaction needed after the seat.focus() call above.
     server.root.startTransaction();
 
     // Clear cursor focus, so that the surface does not receive events
