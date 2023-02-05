@@ -1066,6 +1066,15 @@ pub fn checkFocusFollowsCursor(self: *Self) void {
             .layer_surface, .lock_surface => {},
             .xwayland_override_redirect => assert(build_options.xwayland),
         }
+    } else if (server.root.output_layout.outputAt(self.wlr_cursor.x, self.wlr_cursor.y)) |wlr_output| {
+        // If the user moved to empty space of an output, focus it.
+        const output = @intToPtr(*Output, wlr_output.data);
+
+        if (self.seat.focused_output != output) {
+            self.seat.focusOutput(output);
+            self.seat.focus(null);
+            server.root.startTransaction();
+        }
     } else {
         // The cursor is not above any view, so clear the last followed check
         self.last_focus_follows_cursor_target = null;
