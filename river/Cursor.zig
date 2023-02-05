@@ -540,12 +540,13 @@ fn handlePointerMapping(self: *Self, event: *wlr.Pointer.event.Button, view: *Vi
     const modifiers = wlr_keyboard.getModifiers();
 
     const fullscreen = view.current.fullscreen or view.pending.fullscreen;
+    const floating = view.current.float or view.pending.float or view.output.current.layout == null;
 
     return for (server.config.modes.items[self.seat.mode_id].pointer_mappings.items) |mapping| {
         if (event.button == mapping.event_code and std.meta.eql(modifiers, mapping.modifiers)) {
             switch (mapping.action) {
-                .move => if (!fullscreen) self.enterMode(.move, view),
-                .resize => if (!fullscreen) self.enterMode(.resize, view),
+                .move => if (!fullscreen and floating) self.enterMode(.move, view),
+                .resize => if (!fullscreen and floating) self.enterMode(.resize, view),
                 .command => |args| {
                     self.seat.focus(view);
                     self.seat.runCommand(args);
@@ -891,6 +892,10 @@ fn surfaceAtFilter(view: *View, filter_tags: u32) bool {
 }
 
 pub fn enterMode(self: *Self, mode: enum { move, resize }, view: *View) void {
+    if (!view.current.float and view.output.current.layout != null) {
+        return; // Don't allow move/resizing of non-floating views
+    }
+
     log.debug("enter {s} cursor mode", .{@tagName(mode)});
 
     self.seat.focus(view);
@@ -908,19 +913,9 @@ pub fn enterMode(self: *Self, mode: enum { move, resize }, view: *View) void {
         },
     }
 
-    // Automatically float all views being moved by the pointer, if
-    // their dimensions are set by a layout generator. If however the views
-    // are unarranged, leave them as non-floating so the next active
-    // layout can affect them.
-    if (!view.current.float and view.output.current.layout != null) {
-        view.pending.float = true;
-        view.float_box = view.current.box;
-        view.applyPending();
-    } else {
-        // The View.applyPending() call in the other branch starts
-        // the transaction needed after the seat.focus() call above.
-        server.root.startTransaction();
-    }
+    // The View.applyPending() call in the other branch starts
+    // the transaction needed after the seat.focus() call above.
+    server.root.startTransaction();
 
     // Clear cursor focus, so that the surface does not receive events
     self.seat.wlr_seat.pointerNotifyClearFocus();
