@@ -419,6 +419,10 @@ pub fn applyConstraints(self: *Self) void {
     const box = &self.pending.box;
     box.width = math.clamp(box.width, constraints.min_width, constraints.max_width);
     box.height = math.clamp(box.height, constraints.min_height, constraints.max_height);
+
+    if (self.pending.float or self.output.current.layout == null) {
+        applyFloatingConstraints(self, false);
+    }
 }
 
 /// Return bounds on the dimensions of the view
@@ -448,6 +452,40 @@ pub fn move(self: *Self, delta_x: i32, delta_y: i32) void {
     self.pending.box.y = math.max(self.pending.box.y, border_width);
     self.pending.box.y = math.min(self.pending.box.y, max_y);
     self.pending.box.y = math.max(self.pending.box.y, 0);
+
+    if (self.pending.float) {
+        applyFloatingConstraints(self, false);
+    }
+}
+
+pub fn applyFloatingConstraints(self: *Self, width_only: bool) void {
+    const border_width = if (self.draw_borders) @intCast(i32, server.config.border_width) else 0;
+    const box = self.output.usable_box;
+    const edge_clamp = @intCast(i32, @divFloor(math.min(box.width, box.height), 30)) + border_width;
+
+    const min_x = box.x + edge_clamp;
+    const max_x = math.max(box.x + @intCast(i32, box.width) - edge_clamp, min_x + 10);
+    if (width_only) {
+        self.pending.box.width = math.min(self.pending.box.width, max_x - self.pending.box.x);
+    } else if (self.pending.box.width >= max_x - min_x) {
+        self.pending.box.width = max_x - min_x;
+        self.pending.box.x = min_x;
+    } else {
+        self.pending.box.x = math.max(self.pending.box.x, min_x);
+        self.pending.box.x = math.min(self.pending.box.x, max_x - @intCast(i32, self.pending.box.width));
+    }
+
+    const min_y = box.y + edge_clamp;
+    const max_y = math.max(box.y + @intCast(i32, box.height) - edge_clamp, min_y + 10);
+    if (width_only) {
+        self.pending.box.height = math.min(self.pending.box.height, max_y - self.pending.box.y);
+    } else if (self.pending.box.height >= max_y - min_y) {
+        self.pending.box.height = max_y - min_y;
+        self.pending.box.y = min_y;
+    } else {
+        self.pending.box.y = math.max(self.pending.box.y, min_y);
+        self.pending.box.y = math.min(self.pending.box.y, max_y - @intCast(i32, self.pending.box.height));
+    }
 }
 
 /// Find and return the view corresponding to a given surface, if any

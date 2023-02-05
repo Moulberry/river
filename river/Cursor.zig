@@ -1012,6 +1012,9 @@ fn processMotion(self: *Self, device: *wlr.InputDevice, time: u32, delta_x: f64,
             // Set width/height of view, clamp to view size constraints and output dimensions
             data.view.pending.box.width += @floatToInt(i32, dx);
             data.view.pending.box.height += @floatToInt(i32, dy);
+            if (data.view.pending.float) {
+                data.view.applyFloatingConstraints(true);
+            }
             data.view.applyConstraints();
 
             var output_width: i32 = undefined;
