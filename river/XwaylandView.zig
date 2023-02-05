@@ -267,6 +267,7 @@ fn handleRequestConfigure(
     if (self.view.pending.float) {
         self.view.pending.box.width = event.width;
         self.view.pending.box.height = event.height;
+        self.view.applyConstraints();
     }
     self.configure();
 }
