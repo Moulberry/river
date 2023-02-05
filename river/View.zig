@@ -112,6 +112,7 @@ float_box: wlr.Box = undefined,
 post_fullscreen_box: wlr.Box = undefined,
 
 draw_borders: bool = true,
+is_only_view_in_output: bool = false,
 
 /// This is created when the view is mapped and destroyed when unmapped
 foreign_toplevel_handle: ?*wlr.ForeignToplevelHandleV1 = null,
@@ -298,7 +299,7 @@ pub fn sendToOutput(self: *Self, destination_output: *Output) void {
         // because for tiled views the output will be rearranged, taking care
         // of this.
         if (self.pending.fullscreen) self.pending.box = self.post_fullscreen_box;
-        const border_width = if (self.draw_borders) server.config.border_width else 0;
+        const border_width = if (self.shouldDrawBorders()) server.config.border_width else 0;
         self.pending.box.width = math.min(self.pending.box.width, output_width - (2 * border_width));
         self.pending.box.height = math.min(self.pending.box.height, output_height - (2 * border_width));
 
@@ -413,6 +414,10 @@ pub fn getAppId(self: Self) ?[*:0]const u8 {
     };
 }
 
+pub fn shouldDrawBorders(self: *Self) bool {
+    return self.draw_borders and (!self.is_only_view_in_output or self.pending.float) and !self.pending.fullscreen;
+}
+
 /// Clamp the width/height of the pending state to the constraints of the view
 pub fn applyConstraints(self: *Self) void {
     const constraints = self.getConstraints();
@@ -436,7 +441,7 @@ pub fn getConstraints(self: Self) Constraints {
 /// Modify the pending x/y of the view by the given deltas, clamping to the
 /// bounds of the output.
 pub fn move(self: *Self, delta_x: i32, delta_y: i32) void {
-    const border_width = if (self.draw_borders) server.config.border_width else 0;
+    const border_width = if (self.shouldDrawBorders()) server.config.border_width else 0;
     var output_width: i32 = undefined;
     var output_height: i32 = undefined;
     self.output.wlr_output.effectiveResolution(&output_width, &output_height);
@@ -459,7 +464,7 @@ pub fn move(self: *Self, delta_x: i32, delta_y: i32) void {
 }
 
 pub fn applyFloatingConstraints(self: *Self, width_only: bool) void {
-    const border_width = if (self.draw_borders) @intCast(i32, server.config.border_width) else 0;
+    const border_width = if (self.shouldDrawBorders()) @intCast(i32, server.config.border_width) else 0;
     const box = self.output.usable_box;
     const edge_clamp = @intCast(i32, @divFloor(math.min(box.width, box.height), 30)) + border_width;
 

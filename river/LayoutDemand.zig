@@ -127,10 +127,11 @@ pub fn apply(self: *Self, layout: *Layout) void {
     var i: u32 = 0;
     while (it.next()) |view| : (i += 1) {
         const proposed = &self.view_boxen[i];
+        view.is_only_view_in_output = self.view_boxen.len == 1;
 
         // Here we apply the offset to align the coords with the origin of the
         // usable area and shrink the dimensions to accomodate the border size.
-        const border_width = if (view.draw_borders) server.config.border_width else 0;
+        const border_width = if (view.shouldDrawBorders()) server.config.border_width else 0;
         view.pending.box = .{
             .x = proposed.x + output.usable_box.x + border_width,
             .y = proposed.y + output.usable_box.y + border_width,
