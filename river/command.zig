@@ -94,6 +94,7 @@ const command_impls = std.ComptimeStringMap(
         .{ "keyboard-group-destroy",    @import("command/keyboard_group.zig").keyboardGroupDestroy },
         .{ "keyboard-group-add",        @import("command/keyboard_group.zig").keyboardGroupAdd },
         .{ "keyboard-group-remove",     @import("command/keyboard_group.zig").keyboardGroupRemove },
+        .{ "rotate-outputs",            @import("command/rotate_outputs.zig").rotateOutputs },
     },
 );
 // zig fmt: on
