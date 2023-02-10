@@ -268,6 +268,7 @@ pub fn sendToOutput(self: *Self, destination_output: *Output) void {
 
     self.output.views.remove(node);
     destination_output.views.attach(node, server.config.attach_mode);
+    self.pending.tags = destination_output.pending.tags;
 
     self.output.sendViewTags();
     destination_output.sendViewTags();
