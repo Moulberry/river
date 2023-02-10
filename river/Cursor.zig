@@ -1076,6 +1076,9 @@ pub fn checkFocusFollowsCursor(self: *Self) void {
             self.seat.focus(null);
             server.root.startTransaction();
         }
+
+        // The cursor is not above any view, so clear the last followed check
+        self.last_focus_follows_cursor_target = null;
     } else {
         // The cursor is not above any view, so clear the last followed check
         self.last_focus_follows_cursor_target = null;
