@@ -351,6 +351,9 @@ pub fn whiteboardDrawLine(self: *Self, x0: f64, y0: f64, x1: f64, y1: f64) void 
 }
 
 pub fn whiteboardDrawCircle(self: *Self, cx: i32, cy: i32) void {
+    var box: wlr.Box = undefined;
+    server.root.output_layout.getBox(self.wlr_output, &box);
+
     var changed: bool = false;
     var radius: i32 = 1;
     var x: i32 = -radius;
@@ -358,8 +361,8 @@ pub fn whiteboardDrawCircle(self: *Self, cx: i32, cy: i32) void {
         var y: i32 = -radius;
         while (y <= radius) {
             if (x * x + y * y <= radius * radius) {
-                var sx = x + cx;
-                var sy = y + cy;
+                var sx = x + cx - box.x;
+                var sy = y + cy - box.y;
 
                 if (sx >= 0 and sx < self.wlr_output.width and
                     sy >= 0 and sy < self.wlr_output.height)

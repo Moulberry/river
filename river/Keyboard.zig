@@ -88,23 +88,31 @@ fn handleKey(listener: *wl.Listener(*wlr.Keyboard.event.Key), event: *wlr.Keyboa
     const xkb_state = wlr_keyboard.xkb_state orelse return;
     const keysyms = xkb_state.keyGetSyms(keycode);
 
-    if (self.device.seat.focused_output.current.whiteboard and !released) {
-        for (keysyms) |sym| {
-            if (@enumToInt(sym) == xkb.Keysym.Delete) {
-                self.device.seat.focused_output.clearWhiteboard();
-                return;
-            } else if (@enumToInt(sym) == xkb.Keysym.Escape) {
-                self.device.seat.focused_output.pending.whiteboard = false;
-                self.device.seat.focused_output.clearWhiteboard();
-                server.root.startTransaction();
-                return;
-            } else if (modifiers.ctrl and @enumToInt(sym) == xkb.Keysym.z) {
-                self.device.seat.focused_output.whiteboardUndo();
-                return;
-            } else if (modifiers.ctrl and @enumToInt(sym) == xkb.Keysym.y) {
-                self.device.seat.focused_output.whiteboardRedo();
-                return;
+    if (self.device.seat.focused_output.current.whiteboard) {
+        if (!released) {
+            for (keysyms) |sym| {
+                if (@enumToInt(sym) == xkb.Keysym.Delete) {
+                    self.device.seat.focused_output.clearWhiteboard();
+                    self.eaten_keycodes.add(event.keycode);
+                    return;
+                } else if (@enumToInt(sym) == xkb.Keysym.Escape) {
+                    self.device.seat.focused_output.pending.whiteboard = false;
+                    self.device.seat.focused_output.clearWhiteboard();
+                    server.root.startTransaction();
+                    self.eaten_keycodes.add(event.keycode);
+                    return;
+                } else if (modifiers.ctrl and @enumToInt(sym) == xkb.Keysym.z) {
+                    self.device.seat.focused_output.whiteboardUndo();
+                    self.eaten_keycodes.add(event.keycode);
+                    return;
+                } else if (modifiers.ctrl and @enumToInt(sym) == xkb.Keysym.y) {
+                    self.device.seat.focused_output.whiteboardRedo();
+                    self.eaten_keycodes.add(event.keycode);
+                    return;
+                }
             }
+        } else if (self.eaten_keycodes.remove(event.keycode)) {
+            return;
         }
     }
 
@@ -136,13 +144,13 @@ fn handleKey(listener: *wl.Listener(*wlr.Keyboard.event.Key), event: *wlr.Keyboa
         assert(handled);
     }
 
-    if (self.device.seat.focused_output.current.whiteboard) {
-        return;
-    }
-
     const eaten = if (released) self.eaten_keycodes.remove(event.keycode) else mapped;
 
     if (!eaten) {
+        if (self.device.seat.focused_output.current.whiteboard) {
+            return;
+        }
+
         // If key was not handled, we pass it along to the client.
         const wlr_seat = self.device.seat.wlr_seat;
         wlr_seat.setKeyboard(self.device.wlr_device.toKeyboard());

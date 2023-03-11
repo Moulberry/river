@@ -321,6 +321,10 @@ fn handleButton(listener: *wl.Listener(*wlr.Pointer.event.Button), event: *wlr.P
         } else {
             _ = self.seat.wlr_seat.pointerNotifyButton(event.time_msec, event.button, event.state);
         }
+        if (self.whiteboard_mousedown) {
+            self.seat.focused_output.whiteboardPushHistory();
+        }
+        self.whiteboard_mousedown = false;
         return;
     }
 
@@ -347,7 +351,7 @@ fn handleButton(listener: *wl.Listener(*wlr.Pointer.event.Button), event: *wlr.P
 
             self.whiteboard_mouselastx = self.wlr_cursor.x;
             self.whiteboard_mouselasty = self.wlr_cursor.y;
-            self.whiteboard_mousedown = event.state == .pressed;
+            self.whiteboard_mousedown = true;
 
             if (!self.whiteboard_mousedown) {
                 self.seat.focused_output.whiteboardPushHistory();
@@ -375,6 +379,26 @@ fn handleButton(listener: *wl.Listener(*wlr.Pointer.event.Button), event: *wlr.P
         };
     } else {
         self.updateOutputFocus(self.wlr_cursor.x, self.wlr_cursor.y);
+
+        if (self.seat.focused_output.current.whiteboard) {
+            self.seat.focused_output.whiteboardDrawCircle(@floatToInt(i32, self.wlr_cursor.x), @floatToInt(i32, self.wlr_cursor.y));
+
+            if (self.seat.shift_down) {
+                var x0 = self.whiteboard_mouselastx;
+                var y0 = self.whiteboard_mouselasty;
+                var x1 = self.wlr_cursor.x;
+                var y1 = self.wlr_cursor.y;
+                self.seat.focused_output.whiteboardDrawLine(x0, y0, x1, y1);
+            }
+
+            self.whiteboard_mouselastx = self.wlr_cursor.x;
+            self.whiteboard_mouselasty = self.wlr_cursor.y;
+            self.whiteboard_mousedown = true;
+
+            if (!self.whiteboard_mousedown) {
+                self.seat.focused_output.whiteboardPushHistory();
+            }
+        }
     }
 
     server.root.startTransaction();
@@ -1059,8 +1083,27 @@ fn processMotion(self: *Self, device: *wlr.InputDevice, time: u32, delta_x: f64,
 
     // Moulberry: don't pass motion if in whiteboard mode
     if (self.seat.focused_output.current.whiteboard) {
-        const result = self.surfaceAt() orelse return;
-        if (!result.overlay) {
+        if (self.surfaceAt()) |result| {
+            if (!result.overlay) {
+                self.setImage(Image.pencil);
+
+                if (self.whiteboard_mousedown) {
+                    var x0 = self.whiteboard_mouselastx;
+                    var y0 = self.whiteboard_mouselasty;
+                    self.wlr_cursor.move(device, dx, dy);
+                    var x1 = self.wlr_cursor.x;
+                    var y1 = self.wlr_cursor.y;
+
+                    self.whiteboard_mouselastx = x1;
+                    self.whiteboard_mouselasty = y1;
+
+                    self.seat.focused_output.whiteboardDrawLine(x0, y0, x1, y1);
+                } else {
+                    self.wlr_cursor.move(device, dx, dy);
+                }
+                return;
+            }
+        } else {
             self.setImage(Image.pencil);
 
             if (self.whiteboard_mousedown) {
