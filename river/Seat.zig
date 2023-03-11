@@ -72,6 +72,8 @@ mapping_repeat_timer: *wl.EventSource,
 /// Currently repeating mapping, if any
 repeating_mapping: ?*const Mapping = null,
 
+shift_down: bool = false,
+
 keyboard_groups: std.TailQueue(KeyboardGroup) = .{},
 
 /// Currently focused output, may be the noop output if no real output
@@ -397,6 +399,7 @@ pub fn handleMapping(
     xkb_state: *xkb.State,
 ) bool {
     const modes = &server.config.modes;
+
     // In case more than one mapping matches, all of them are activated
     var handled = false;
     for (modes.items[self.mode_id].mappings.items) |*mapping| {

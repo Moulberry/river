@@ -181,6 +181,52 @@ pub fn renderOutput(output: *Output) void {
     renderLayer(output, output.getLayer(.overlay).*, &now, .toplevels);
     renderLayer(output, output.getLayer(.overlay).*, &now, .popups);
 
+    // todo: render thing here
+    if (output.current.whiteboard) {
+        var full_box: wlr.Box = .{
+            .x = 0,
+            .y = 0,
+            .width = output.wlr_output.width,
+            .height = output.wlr_output.height,
+        };
+
+        var color = &server.config.border_color_urgent;
+        var border: wlr.Box = undefined;
+
+        // left and right, covering the corners as well
+        border.y = full_box.y;
+        border.width = server.config.border_width;
+        border.height = full_box.height;
+
+        // left
+        border.x = full_box.x;
+        renderRect(output, border, color);
+
+        // right
+        border.x = full_box.x + full_box.width - server.config.border_width;
+        renderRect(output, border, color);
+
+        // top and bottom
+        border.x = full_box.x;
+        border.width = full_box.width - server.config.border_width;
+        border.height = server.config.border_width;
+
+        // top
+        border.y = full_box.y;
+        renderRect(output, border, color);
+
+        // bottom border
+        border.y = full_box.y + full_box.height - server.config.border_width;
+        renderRect(output, border, color);
+
+        if (output.getWhiteboardTexture()) |texture| {
+            server.renderer.renderTexture(texture, &[9]f32{ 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0 }, 0, 0, 1.0) catch @panic("failed to render");
+        }
+        //wlr.Texture.destroy(texture);
+
+        // renderRect(output, full_box, &server.config.border_color_urgent);
+    }
+
     renderDragIcons(output, &now);
 
     output.wlr_output.renderSoftwareCursors(null);

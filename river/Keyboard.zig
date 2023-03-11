@@ -88,6 +88,26 @@ fn handleKey(listener: *wl.Listener(*wlr.Keyboard.event.Key), event: *wlr.Keyboa
     const xkb_state = wlr_keyboard.xkb_state orelse return;
     const keysyms = xkb_state.keyGetSyms(keycode);
 
+    if (self.device.seat.focused_output.current.whiteboard and !released) {
+        for (keysyms) |sym| {
+            if (@enumToInt(sym) == xkb.Keysym.Delete) {
+                self.device.seat.focused_output.clearWhiteboard();
+                return;
+            } else if (@enumToInt(sym) == xkb.Keysym.Escape) {
+                self.device.seat.focused_output.pending.whiteboard = false;
+                self.device.seat.focused_output.clearWhiteboard();
+                server.root.startTransaction();
+                return;
+            } else if (modifiers.ctrl and @enumToInt(sym) == xkb.Keysym.z) {
+                self.device.seat.focused_output.whiteboardUndo();
+                return;
+            } else if (modifiers.ctrl and @enumToInt(sym) == xkb.Keysym.y) {
+                self.device.seat.focused_output.whiteboardRedo();
+                return;
+            }
+        }
+    }
+
     // Hide cursor when typing
     for (keysyms) |sym| {
         if (server.config.cursor_hide_when_typing == .enabled and
@@ -101,6 +121,9 @@ fn handleKey(listener: *wl.Listener(*wlr.Keyboard.event.Key), event: *wlr.Keyboa
 
     // Handle builtin mapping, only when keys are pressed
     for (keysyms) |sym| {
+        if (@enumToInt(sym) == xkb.Keysym.Shift_L) {
+            self.device.seat.shift_down = !released;
+        }
         if (!released and handleBuiltinMapping(sym)) return;
     }
 
@@ -111,6 +134,10 @@ fn handleKey(listener: *wl.Listener(*wlr.Keyboard.event.Key), event: *wlr.Keyboa
 
         const handled = self.device.seat.handleMapping(keycode, modifiers, released, xkb_state);
         assert(handled);
+    }
+
+    if (self.device.seat.focused_output.current.whiteboard) {
+        return;
     }
 
     const eaten = if (released) self.eaten_keycodes.remove(event.keycode) else mapped;

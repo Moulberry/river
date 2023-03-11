@@ -94,6 +94,7 @@ pub fn init(self: *Self) !void {
             // TODO: find a good way to not create a wlr.OutputDamage for the noop output
             .damage = try wlr.OutputDamage.create(noop_wlr_output),
             .usable_box = .{ .x = 0, .y = 0, .width = 0, .height = 0 },
+            .whiteboard_buffer = std.ArrayList(u32).init(util.gpa),
         },
     };
     noop_wlr_output.data = @ptrToInt(&self.noop_output);

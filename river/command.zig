@@ -83,6 +83,7 @@ const command_impls = std.ComptimeStringMap(
         .{ "toggle-float",              @import("command/toggle_float.zig").toggleFloat },
         .{ "toggle-focused-tags",       @import("command/tags.zig").toggleFocusedTags },
         .{ "toggle-fullscreen",         @import("command/toggle_fullscreen.zig").toggleFullscreen },
+        .{ "toggle-whiteboard",         @import("command/toggle_whiteboard.zig").toggleWhiteboard },
         .{ "toggle-view-tags",          @import("command/tags.zig").toggleViewTags },
         .{ "unmap",                     @import("command/map.zig").unmap },
         .{ "unmap-pointer",             @import("command/map.zig").unmapPointer },

@@ -52,6 +52,15 @@ const State = struct {
     /// This is similar to dwms behvaviour. Note that this of course does not
     /// affect already floating views.
     layout: ?*Layout = null,
+
+    whiteboard: bool = false,
+};
+
+const WhiteboardHistoryState = union(enum) {
+    pushed: void, // whiteboard_buffer is the same as the last element of history
+    changed: void, // whiteboard_buffer has changes (eg. mouse still being held down)
+    empty: void,
+    history: usize,
 };
 
 wlr_output: *wlr.Output,
@@ -64,6 +73,12 @@ layers: [4]std.TailQueue(LayerSurface) = [1]std.TailQueue(LayerSurface){.{}} ** 
 /// exclusive zones of exclusive layer surfaces.
 /// TODO: this should be part of the output's State
 usable_box: wlr.Box,
+
+whiteboard_history: std.ArrayList(std.ArrayList(u32)) = std.ArrayList(std.ArrayList(u32)).init(util.gpa),
+whiteboard_history_state: WhiteboardHistoryState = .pushed,
+whiteboard_buffer: std.ArrayList(u32),
+whiteboard_texture: ?*wlr.Texture = null,
+whiteboard_dirty: bool = false,
 
 /// The top of the stack is the "most important" view.
 views: ViewStack(View) = .{},
@@ -144,11 +159,7 @@ pub fn init(self: *Self, wlr_output: *wlr.Output) !void {
         };
     }
 
-    self.* = .{
-        .wlr_output = wlr_output,
-        .damage = try wlr.OutputDamage.create(wlr_output),
-        .usable_box = undefined,
-    };
+    self.* = .{ .wlr_output = wlr_output, .damage = try wlr.OutputDamage.create(wlr_output), .usable_box = undefined, .whiteboard_buffer = std.ArrayList(u32).init(util.gpa) };
     wlr_output.data = @ptrToInt(self);
 
     wlr_output.events.destroy.add(&self.destroy);
@@ -177,6 +188,215 @@ pub fn init(self: *Self, wlr_output: *wlr.Output) !void {
     self.wlr_output.effectiveResolution(&self.usable_box.width, &self.usable_box.height);
 
     self.setTitle();
+}
+
+pub fn clearWhiteboard(self: *Self) void {
+    while (self.whiteboard_history.items.len > 0) {
+        self.whiteboard_history.pop().deinit();
+    }
+    self.whiteboard_history_state = .changed;
+    std.mem.set(u32, self.whiteboard_buffer.items, 0x0);
+    self.whiteboard_dirty = true;
+    self.damage.?.addWhole();
+}
+
+pub fn getWhiteboardTexture(self: *Self) ?*wlr.Texture {
+    // todo: if output size changes during drawing the pixels will be wrong
+    // but the output size doesn't really change so who cares
+    var length: i32 = self.wlr_output.width * self.wlr_output.height;
+    if (length <= 0) {
+        return null;
+    }
+
+    var old_len = self.whiteboard_buffer.items.len;
+    if (length != old_len) {
+        self.whiteboard_history.clearRetainingCapacity();
+        self.whiteboard_buffer.resize(@intCast(usize, length)) catch return null;
+        std.mem.set(u32, self.whiteboard_buffer.items, 0x0);
+    }
+
+    if (self.whiteboard_buffer.items.len == 0) {
+        return null;
+    }
+
+    if (self.whiteboard_texture == null or self.whiteboard_dirty) {
+        if (self.whiteboard_texture) |texture| {
+            texture.destroy();
+        }
+        self.whiteboard_dirty = false;
+        self.whiteboard_texture = wlr.Texture.fromPixels(server.renderer, @intToEnum(wl.Shm.Format, 0x34325241), @intCast(u32, 4 * self.wlr_output.width), @intCast(u32, self.wlr_output.width), @intCast(u32, self.wlr_output.height), &self.whiteboard_buffer.items[0]);
+    }
+
+    return self.whiteboard_texture;
+}
+
+pub fn whiteboardPushHistory(self: *Self) void {
+    switch (self.whiteboard_history_state) {
+        .pushed => return, // already pushed
+        .changed => {},
+        .empty => {
+            while (self.whiteboard_history.items.len > 0) {
+                self.whiteboard_history.pop().deinit();
+            }
+        },
+        .history => |index| {
+            var i = self.whiteboard_history.items.len - 1;
+            while (i > index) {
+                i -= 1;
+                self.whiteboard_history.pop().deinit();
+            }
+        },
+    }
+    self.whiteboard_history.append(self.whiteboard_buffer.clone() catch @panic("unable to clone")) catch @panic("unable to append");
+    self.whiteboard_history_state = .pushed;
+}
+
+pub fn whiteboardUndo(self: *Self) void {
+    var skip_to: isize = -1;
+    switch (self.whiteboard_history_state) {
+        .empty => return,
+        .pushed => {
+            skip_to = @intCast(isize, self.whiteboard_history.items.len) - 2;
+        },
+        .changed => {
+            skip_to = @intCast(isize, self.whiteboard_history.items.len) - 1;
+        },
+        .history => |index| {
+            skip_to = @intCast(isize, index) - 1;
+        },
+    }
+    if (skip_to >= self.whiteboard_history.items.len) {
+        skip_to = @intCast(isize, self.whiteboard_history.items.len) - 1;
+    }
+    if (skip_to < 0) {
+        self.whiteboard_history_state = .empty;
+        std.mem.set(u32, self.whiteboard_buffer.items, 0x0);
+    } else {
+        self.whiteboard_history_state = .{ .history = @intCast(usize, skip_to) };
+        var buffer = &self.whiteboard_history.items[@intCast(usize, skip_to)];
+        self.whiteboard_buffer.replaceRange(0, buffer.items.len, buffer.items) catch @panic("unable to replaceRange");
+    }
+    self.whiteboard_dirty = true;
+    self.damage.?.addWhole();
+}
+
+pub fn whiteboardRedo(self: *Self) void {
+    var skip_to: isize = -1;
+    switch (self.whiteboard_history_state) {
+        .empty => {
+            skip_to = 0;
+        },
+        .pushed => return,
+        .changed => return,
+        .history => |index| {
+            skip_to = @intCast(isize, index) + 1;
+        },
+    }
+
+    if (skip_to >= self.whiteboard_history.items.len) {
+        self.whiteboard_history_state = .changed;
+        return;
+    }
+
+    if (skip_to == self.whiteboard_history.items.len - 1) {
+        self.whiteboard_history_state = .pushed;
+    } else {
+        self.whiteboard_history_state = .{ .history = @intCast(usize, skip_to) };
+    }
+    var buffer = &self.whiteboard_history.items[@intCast(usize, skip_to)];
+    self.whiteboard_buffer.replaceRange(0, buffer.items.len, buffer.items) catch @panic("unable to replaceRange");
+
+    self.whiteboard_dirty = true;
+    self.damage.?.addWhole();
+}
+
+pub fn whiteboardDrawLine(self: *Self, x0: f64, y0: f64, x1: f64, y1: f64) void {
+    if (@floatToInt(i32, x0) == @floatToInt(i32, x1) and
+        @floatToInt(i32, y0) == @floatToInt(i32, y1))
+    {
+        self.whiteboardDrawCircle(@floatToInt(i32, x0), @floatToInt(i32, y0));
+        return;
+    }
+
+    var dx1: f64 = x1 - x0;
+    var dy1: f64 = y1 - y0;
+
+    var deltaDistX = @fabs(1.0 / dx1);
+    var deltaDistY = @fabs(1.0 / dy1);
+
+    var stepX: i32 = if (dx1 < 0) -1 else 1;
+    var stepY: i32 = if (dy1 < 0) -1 else 1;
+
+    var x: i32 = @floatToInt(i32, x0);
+    var y: i32 = @floatToInt(i32, y0);
+    var sideDistX: f64 = if (dx1 < 0) (x0 - @intToFloat(f64, x)) * deltaDistX else (@intToFloat(f64, x) + 1.0 - x0) * deltaDistX;
+    var sideDistY: f64 = if (dy1 < 0) (y0 - @intToFloat(f64, y)) * deltaDistY else (@intToFloat(f64, y) + 1.0 - y0) * deltaDistY;
+
+    self.whiteboardDrawCircle(x, y);
+    while (true) {
+        if (sideDistX < sideDistY) {
+            sideDistX += deltaDistX;
+            x += stepX;
+        } else {
+            sideDistY += deltaDistY;
+            y += stepY;
+        }
+
+        self.whiteboardDrawCircle(x, y);
+
+        if (x * stepX > @floatToInt(i32, x1) * stepX or y * stepY > @floatToInt(i32, y1) * stepY) {
+            break;
+        }
+    }
+}
+
+pub fn whiteboardDrawCircle(self: *Self, cx: i32, cy: i32) void {
+    var changed: bool = false;
+    var radius: i32 = 1;
+    var x: i32 = -radius;
+    while (x <= radius) {
+        var y: i32 = -radius;
+        while (y <= radius) {
+            if (x * x + y * y <= radius * radius) {
+                var sx = x + cx;
+                var sy = y + cy;
+
+                if (sx >= 0 and sx < self.wlr_output.width and
+                    sy >= 0 and sy < self.wlr_output.height)
+                {
+                    var index: i32 = sx + sy * self.wlr_output.width;
+                    if (index < 0 or index >= self.whiteboard_buffer.items.len) {
+                        y += 1;
+                        continue;
+                    }
+
+                    // var opacity: u32 = 0xFF - @divFloor(std.math.sqrt(@intCast(u32, x * x + y * y)) * 0xFF, 2);
+                    // var old_opacity = (self.whiteboard_buffer.items[@intCast(usize, index)] >> 24) & 0xFF;
+                    // if (opacity < old_opacity) {
+                    //     continue;
+                    // }
+
+                    var argb: u32 = 0xFFFF0000;
+                    var old_argb = self.whiteboard_buffer.items[@intCast(usize, index)];
+
+                    if (argb != old_argb) {
+                        self.whiteboard_buffer.items[@intCast(usize, index)] = argb;
+                        changed = true;
+                    }
+                }
+            }
+            y += 1;
+        }
+        x += 1;
+    }
+    if (changed) {
+        self.whiteboard_dirty = true;
+        self.damage.?.addWhole();
+
+        if (self.whiteboard_history_state == .pushed) {
+            self.whiteboard_history_state = .changed;
+        }
+    }
 }
 
 pub fn getLayer(self: *Self, layer: zwlr.LayerShellV1.Layer) *std.TailQueue(LayerSurface) {

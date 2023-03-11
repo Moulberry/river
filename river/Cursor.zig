@@ -80,6 +80,7 @@ const Image = enum {
     unknown,
     left_ptr,
     move,
+    pencil,
     @"se-resize",
 };
 
@@ -94,6 +95,10 @@ const log = std.log.scoped(.cursor);
 
 /// Current cursor mode as well as any state needed to implement that mode
 mode: Mode = .passthrough,
+
+whiteboard_mousedown: bool = false,
+whiteboard_mouselastx: f64 = 0.0,
+whiteboard_mouselasty: f64 = 0.0,
 
 seat: *Seat,
 wlr_cursor: *wlr.Cursor,
@@ -284,6 +289,11 @@ fn clearFocus(self: *Self) void {
 fn handleAxis(listener: *wl.Listener(*wlr.Pointer.event.Axis), event: *wlr.Pointer.event.Axis) void {
     const self = @fieldParentPtr(Self, "axis", listener);
 
+    // Moulberry: don't pass motion if in whiteboard mode
+    if (self.seat.focused_output.current.whiteboard) {
+        return;
+    }
+
     self.seat.handleActivity();
     self.unhide();
 
@@ -323,6 +333,29 @@ fn handleButton(listener: *wl.Listener(*wlr.Pointer.event.Button), event: *wlr.P
     }
 
     if (self.surfaceAt()) |result| {
+        // Moulberry: don't pass motion if in whiteboard mode
+        if (!result.overlay and self.seat.focused_output.current.whiteboard) {
+            self.seat.focused_output.whiteboardDrawCircle(@floatToInt(i32, self.wlr_cursor.x), @floatToInt(i32, self.wlr_cursor.y));
+
+            if (self.seat.shift_down) {
+                var x0 = self.whiteboard_mouselastx;
+                var y0 = self.whiteboard_mouselasty;
+                var x1 = self.wlr_cursor.x;
+                var y1 = self.wlr_cursor.y;
+                self.seat.focused_output.whiteboardDrawLine(x0, y0, x1, y1);
+            }
+
+            self.whiteboard_mouselastx = self.wlr_cursor.x;
+            self.whiteboard_mouselasty = self.wlr_cursor.y;
+            self.whiteboard_mousedown = event.state == .pressed;
+
+            if (!self.whiteboard_mousedown) {
+                self.seat.focused_output.whiteboardPushHistory();
+            }
+
+            return;
+        }
+
         if (result.parent == .view and self.handlePointerMapping(event, result.parent.view)) {
             // If a mapping is triggered don't send events to clients.
             return;
@@ -387,6 +420,10 @@ fn handlePinchBegin(
     event: *wlr.Pointer.event.PinchBegin,
 ) void {
     const self = @fieldParentPtr(Self, "pinch_begin", listener);
+    // Moulberry: don't pass motion if in whiteboard mode
+    if (self.seat.focused_output.current.whiteboard) {
+        return;
+    }
     self.pointer_gestures.sendPinchBegin(
         self.seat.wlr_seat,
         event.time_msec,
@@ -399,6 +436,10 @@ fn handlePinchUpdate(
     event: *wlr.Pointer.event.PinchUpdate,
 ) void {
     const self = @fieldParentPtr(Self, "pinch_update", listener);
+    // Moulberry: don't pass motion if in whiteboard mode
+    if (self.seat.focused_output.current.whiteboard) {
+        return;
+    }
     self.pointer_gestures.sendPinchUpdate(
         self.seat.wlr_seat,
         event.time_msec,
@@ -414,6 +455,10 @@ fn handlePinchEnd(
     event: *wlr.Pointer.event.PinchEnd,
 ) void {
     const self = @fieldParentPtr(Self, "pinch_end", listener);
+    // Moulberry: don't pass motion if in whiteboard mode
+    if (self.seat.focused_output.current.whiteboard) {
+        return;
+    }
     self.pointer_gestures.sendPinchEnd(
         self.seat.wlr_seat,
         event.time_msec,
@@ -426,6 +471,10 @@ fn handleSwipeBegin(
     event: *wlr.Pointer.event.SwipeBegin,
 ) void {
     const self = @fieldParentPtr(Self, "swipe_begin", listener);
+    // Moulberry: don't pass motion if in whiteboard mode
+    if (self.seat.focused_output.current.whiteboard) {
+        return;
+    }
     self.pointer_gestures.sendSwipeBegin(
         self.seat.wlr_seat,
         event.time_msec,
@@ -438,6 +487,10 @@ fn handleSwipeUpdate(
     event: *wlr.Pointer.event.SwipeUpdate,
 ) void {
     const self = @fieldParentPtr(Self, "swipe_update", listener);
+    // Moulberry: don't pass motion if in whiteboard mode
+    if (self.seat.focused_output.current.whiteboard) {
+        return;
+    }
     self.pointer_gestures.sendSwipeUpdate(
         self.seat.wlr_seat,
         event.time_msec,
@@ -451,6 +504,10 @@ fn handleSwipeEnd(
     event: *wlr.Pointer.event.SwipeEnd,
 ) void {
     const self = @fieldParentPtr(Self, "swipe_end", listener);
+    // Moulberry: don't pass motion if in whiteboard mode
+    if (self.seat.focused_output.current.whiteboard) {
+        return;
+    }
     self.pointer_gestures.sendSwipeEnd(
         self.seat.wlr_seat,
         event.time_msec,
@@ -464,6 +521,11 @@ fn handleTouchUp(
 ) void {
     const self = @fieldParentPtr(Self, "touch_up", listener);
 
+    // Moulberry: don't pass motion if in whiteboard mode
+    if (self.seat.focused_output.current.whiteboard) {
+        return;
+    }
+
     self.seat.handleActivity();
 
     _ = self.touch_points.remove(event.touch_id);
@@ -476,6 +538,11 @@ fn handleTouchDown(
     event: *wlr.Touch.event.Down,
 ) void {
     const self = @fieldParentPtr(Self, "touch_down", listener);
+
+    // Moulberry: don't pass motion if in whiteboard mode
+    if (self.seat.focused_output.current.whiteboard) {
+        return;
+    }
 
     self.seat.handleActivity();
 
@@ -510,6 +577,11 @@ fn handleTouchMotion(
 ) void {
     const self = @fieldParentPtr(Self, "touch_motion", listener);
 
+    // Moulberry: don't pass motion if in whiteboard mode
+    if (self.seat.focused_output.current.whiteboard) {
+        return;
+    }
+
     self.seat.handleActivity();
 
     var lx: f64 = undefined;
@@ -527,6 +599,11 @@ fn handleTouchMotion(
 
 fn handleTouchFrame(listener: *wl.Listener(void)) void {
     const self = @fieldParentPtr(Self, "touch_frame", listener);
+
+    // Moulberry: don't pass motion if in whiteboard mode
+    if (self.seat.focused_output.current.whiteboard) {
+        return;
+    }
 
     self.seat.handleActivity();
 
@@ -656,6 +733,7 @@ const SurfaceAtResult = struct {
     surface: *wlr.Surface,
     sx: f64,
     sy: f64,
+    overlay: bool = false,
     parent: union(enum) {
         view: *View,
         layer_surface: *LayerSurface,
@@ -719,7 +797,13 @@ fn surfaceAtCoords(lx: f64, ly: f64) ?SurfaceAtResult {
     //  5. view toplevels and popups
     //  6. bottom, background layer toplevels
 
-    if (layerSurfaceAt(output.getLayer(.overlay).*, ox, oy)) |s| return s;
+    if (layerSurfaceAt(output.getLayer(.overlay).*, ox, oy)) |s| return SurfaceAtResult{
+        .surface = s.surface,
+        .sx = s.sx,
+        .sy = s.sy,
+        .parent = s.parent,
+        .overlay = true,
+    };
 
     if (fullscreen_view) |view| {
         if (build_options.xwayland) if (xwaylandOverrideRedirectSurfaceAt(lx, ly)) |s| return s;
@@ -972,6 +1056,31 @@ fn processMotion(self: *Self, device: *wlr.InputDevice, time: u32, delta_x: f64,
             dy = sy_con - sy;
         }
     }
+
+    // Moulberry: don't pass motion if in whiteboard mode
+    if (self.seat.focused_output.current.whiteboard) {
+        const result = self.surfaceAt() orelse return;
+        if (!result.overlay) {
+            self.setImage(Image.pencil);
+
+            if (self.whiteboard_mousedown) {
+                var x0 = self.whiteboard_mouselastx;
+                var y0 = self.whiteboard_mouselasty;
+                self.wlr_cursor.move(device, dx, dy);
+                var x1 = self.wlr_cursor.x;
+                var y1 = self.wlr_cursor.y;
+
+                self.whiteboard_mouselastx = x1;
+                self.whiteboard_mouselasty = y1;
+
+                self.seat.focused_output.whiteboardDrawLine(x0, y0, x1, y1);
+            } else {
+                self.wlr_cursor.move(device, dx, dy);
+            }
+            return;
+        }
+    }
+
     switch (self.mode) {
         .passthrough => {
             self.wlr_cursor.move(device, dx, dy);
